@@ -1,0 +1,107 @@
+# Gilliam's Surgical Strike Script — For Windows 11
+# Version: 2025.07.06
+
+# Ensure Admin
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+    Write-Warning "Run this script as Administrator."
+    exit
+}
+
+Write-Host "Initializing Gilliam's Surgical Strike..." -ForegroundColor Red
+
+### ─── DISABLE TELEMETRY & DIAGNOSTICS ─────────────────────────────────────────
+# Set telemetry to minimum (0 = Security only)
+Write-Host "Killing telemetry..." -ForegroundColor Yellow
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -PropertyType DWORD -Force | Out-Null
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "DisableTelemetry" -Value 1 -PropertyType DWORD -Force | Out-Null
+Stop-Service DiagTrack -Force
+Set-Service DiagTrack -StartupType Disabled
+Stop-Service dmwappushservice -Force
+Set-Service dmwappushservice -StartupType Disabled
+
+### ─── NUKE COPILOT / WINDOWS AI GARBAGE ──────────────────────────────────────
+Write-Host "Uninstalling CoPilot and AI crap..." -ForegroundColor Yellow
+# Kill CoPilot from taskbar
+New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ShowCopilotButton" -PropertyType DWord -Value 0 -Force | Out-Null
+# Block CoPilot feature
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" /v TurnOffWindowsCopilot /t REG_DWORD /d 1 /f
+# Block AI stuff (Recall, AI File Explorer etc.)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" /v DisableAIFeatures /t REG_DWORD /d 1 /f
+
+### ─── TASK SCHEDULER JUNK ─────────────────────────────────────────────────────
+Write-Host "Terminating scheduled telemetry tasks..." -ForegroundColor Yellow
+$tasks = @(
+  "\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+  "\Microsoft\Windows\Autochk\Proxy",
+  "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
+  "\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask",
+  "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
+  "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector",
+  "\Microsoft\Windows\Feedback\Siuf\DmClient",
+  "\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload",
+  "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser"
+)
+
+foreach ($task in $tasks) {
+  try {
+    schtasks /Change /TN $task /Disable
+  } catch { Write-Host "Failed to disable $task" }
+}
+
+### ─── DISABLE CONSUMER/ADS/FEEDBACK ──────────────────────────────────────────
+Write-Host "Disabling Ads and Feedback..." -ForegroundColor Yellow
+$adKeys = @(
+  "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent",
+  "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+)
+
+foreach ($key in $adKeys) {
+  New-Item -Path $key -Force | Out-Null
+}
+
+New-ItemProperty -Path $adKeys[0] -Name "DisableConsumerFeatures" -PropertyType DWord -Value 1 -Force | Out-Null
+New-ItemProperty -Path $adKeys[1] -Name "SubscribedContent-338388Enabled" -PropertyType DWord -Value 0 -Force | Out-Null
+New-ItemProperty -Path $adKeys[1] -Name "ContentDeliveryAllowed" -PropertyType DWord -Value 0 -Force | Out-Null
+New-ItemProperty -Path $adKeys[1] -Name "FeatureManagementEnabled" -PropertyType DWord -Value 0 -Force | Out-Null
+
+# Disable Feedback prompts
+reg add "HKCU\Software\Microsoft\Siuf\Rules" /v NumberOfSIUFInPeriod /t REG_DWORD /d 0 /f
+
+### ─── OPTIONAL: REMOVE DEFAULT BLOATWARE APPS ────────────────────────────────
+Write-Host "Removing bloatware apps..." -ForegroundColor Yellow
+$apps = @(
+  "Microsoft.549981C3F5F10",    # Cortana
+  "Microsoft.GetHelp",
+  "Microsoft.Getstarted",
+  "Microsoft.WindowsFeedbackHub",
+  "Microsoft.Xbox.TCUI",
+  "Microsoft.XboxGameOverlay",
+  "Microsoft.XboxGamingOverlay",
+  "Microsoft.XboxIdentityProvider",
+  "Microsoft.XboxSpeechToTextOverlay",
+  "Microsoft.Microsoft3DViewer",
+  "Microsoft.MicrosoftOfficeHub",
+  "Microsoft.MicrosoftSolitaireCollection",
+  "Microsoft.SkypeApp",
+  "Microsoft.MicrosoftStickyNotes",
+  "Microsoft.WindowsAlarms",
+  "Microsoft.WindowsMaps",
+  "Microsoft.WindowsSoundRecorder",
+  "Microsoft.ZuneMusic",
+  "Microsoft.ZuneVideo"
+)
+
+foreach ($app in $apps) {
+  Get-AppxPackage -Name $app -AllUsers | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+  Get-AppxProvisionedPackage -Online | Where-Object {$_.DisplayName -eq $app} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
+}
+
+### ─── BLOCK EDGE BACKGROUND UPDATER ──────────────────────────────────────────
+Write-Host "Blocking Edge auto-crap..." -ForegroundColor Yellow
+reg add "HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate" /v UpdateDefault /t REG_DWORD /d 0 /f
+
+### ─── OPTIONAL: DISABLE ONLINE SEARCH IN START ───────────────────────────────
+reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableSearchBoxSuggestions /t REG_DWORD /d 1 /f
+
+### ─── FINISH HIM ─────────────────────────────────────────────────────────────
+Write-Host "Gilliam's Surgical Strike complete. Reboot to apply full effect." -ForegroundColor Green
