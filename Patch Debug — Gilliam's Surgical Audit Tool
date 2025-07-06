@@ -1,0 +1,103 @@
+# Gilliam's Patch Debug — Verify Effectiveness
+# Run AFTER Surgical Strike Script
+
+Write-Host "`n[🔎] Running Gilliam's Patch Debug..." -ForegroundColor Cyan
+
+function Check-Registry {
+    param ($Path, $Name, $Expected)
+    $val = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $Name -ErrorAction SilentlyContinue
+    if ($val -ne $Expected) {
+        Write-Host " [✗] $Name is not set to $Expected in $Path" -ForegroundColor Red
+    } else {
+        Write-Host " [✓] $Name is correctly set to $Expected" -ForegroundColor Green
+    }
+}
+
+function Check-Service {
+    param ($Name)
+    $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -ne "Stopped") {
+        Write-Host " [✗] $Name is still running." -ForegroundColor Red
+    } elseif ($svc -and $svc.StartType -ne 'Disabled') {
+        Write-Host " [✗] $Name is not disabled." -ForegroundColor Red
+    } else {
+        Write-Host " [✓] $Name is stopped and disabled." -ForegroundColor Green
+    }
+}
+
+function Check-ScheduledTask {
+    param ($TaskPath)
+    try {
+        $task = Get-ScheduledTask -TaskPath $TaskPath -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne 'Disabled') {
+            Write-Host " [✗] $TaskPath is still active." -ForegroundColor Red
+        } else {
+            Write-Host " [✓] $TaskPath is disabled." -ForegroundColor Green
+        }
+    } catch {
+        Write-Host " [✓] $TaskPath not found or already nuked." -ForegroundColor Green
+    }
+}
+
+### ─── REGISTRY CHECKS ────────────────────────────────────────────────────────
+Write-Host "`n[🔍] Checking registry values..."
+Check-Registry "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0
+Check-Registry "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "DisableTelemetry" 1
+Check-Registry "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" "TurnOffWindowsCopilot" 1
+Check-Registry "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" "DisableAIFeatures" 1
+Check-Registry "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "ShowCopilotButton" 0
+
+### ─── SERVICE CHECKS ─────────────────────────────────────────────────────────
+Write-Host "`n[🔍] Checking service status..."
+Check-Service "DiagTrack"
+Check-Service "dmwappushservice"
+
+### ─── TASK CHECKS ────────────────────────────────────────────────────────────
+Write-Host "`n[🔍] Verifying scheduled tasks..."
+$scheduledTasks = @(
+  "\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+  "\Microsoft\Windows\Autochk\Proxy",
+  "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
+  "\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask",
+  "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
+  "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector",
+  "\Microsoft\Windows\Feedback\Siuf\DmClient",
+  "\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload",
+  "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser"
+)
+
+foreach ($task in $scheduledTasks) {
+    Check-ScheduledTask $task
+}
+
+### ─── AI / ADS / EDGE / FEEDBACK ─────────────────────────────────────────────
+Write-Host "`n[🔍] Checking ads, AI & other spyware settings..."
+Check-Registry "HKCU:\Software\Policies\Microsoft\Windows\Explorer" "DisableSearchBoxSuggestions" 1
+Check-Registry "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableConsumerFeatures" 1
+Check-Registry "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "ContentDeliveryAllowed" 0
+Check-Registry "HKLM:\SOFTWARE\Policies\Microsoft\EdgeUpdate" "UpdateDefault" 0
+
+### ─── APPX BLOAT DETECTION ───────────────────────────────────────────────────
+Write-Host "`n[🔍] Detecting leftover bloatware apps..."
+$bloatApps = @(
+  "Microsoft.WindowsFeedbackHub",
+  "Microsoft.GetHelp",
+  "Microsoft.Getstarted",
+  "Microsoft.XboxGamingOverlay",
+  "Microsoft.MicrosoftSolitaireCollection",
+  "Microsoft.MicrosoftOfficeHub",
+  "Microsoft.SkypeApp"
+)
+
+foreach ($app in $bloatApps) {
+    $installed = Get-AppxPackage -AllUsers | Where-Object {$_.Name -eq $app}
+    if ($installed) {
+        Write-Host " [✗] $app is still installed." -ForegroundColor Red
+    } else {
+        Write-Host " [✓] $app is removed." -ForegroundColor Green
+    }
+}
+
+### ─── FINAL OUTPUT ───────────────────────────────────────────────────────────
+Write-Host "`n[✔️] Patch Debug complete. Audit results above." -ForegroundColor Cyan
+Write-Host "If something dodged the knife, rerun Gilliam's Surgical Strike." -ForegroundColor Magenta
